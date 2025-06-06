@@ -1,0 +1,80 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import yfinance as yf
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM
+
+def download_stock_data(symbol, start_date, end_date):
+    df = yf.download(symbol, start=start_date, end=end_date)
+    return df[['Close']]
+
+def preprocess_data(data, lookback=60):
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled_data = scaler.fit_transform(data)
+
+    x, y = [], []
+    for i in range(lookback, len(scaled_data)):
+        x.append(scaled_data[i - lookback:i, 0])
+        y.append(scaled_data[i, 0])
+
+    x, y = np.array(x), np.array(y)
+    x = np.reshape(x, (x.shape[0], x.shape[1], 1))
+    return x, y, scaler
+
+def build_model(input_shape):
+    model = Sequential()
+    model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
+    model.add(LSTM(50))
+    model.add(Dense(25))
+    model.add(Dense(1))
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    return model
+
+def plot_predictions(actual, predicted, title="Stock Price Prediction"):
+    plt.figure(figsize=(12, 6))
+    plt.plot(actual, label="Actual Price")
+    plt.plot(predicted, label="Predicted Price")
+    plt.title(title)
+    plt.xlabel("Days")
+    plt.ylabel("Price")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+def main():
+    # Parameters
+    stock_symbol = "AAPL"
+    start_date = "2015-01-01"
+    end_date = "2024-12-31"
+    lookback = 60
+    epochs = 10
+    batch_size = 64
+
+    # Load and prepare data
+    data = download_stock_data(stock_symbol, start_date, end_date)
+    dataset = data.values
+    train_size = int(len(dataset) * 0.8)
+
+    train_data = data[:train_size]
+    test_data = data[train_size - lookback:]
+
+    x_train, y_train, scaler = preprocess_data(train_data.values, lookback)
+    x_test, y_test, _ = preprocess_data(test_data.values, lookback)
+
+    # Build and train model
+    model = build_model((x_train.shape[1], 1))
+    model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs)
+
+    # Predict
+    predictions = model.predict(x_test)
+    predictions = scaler.inverse_transform(predictions)
+    actual_prices = test_data.values[lookback:]
+
+    # Plot
+    plot_predictions(actual_prices, predictions, title=f"{stock_symbol} Stock Price Prediction")
+
+if __name__ == "__main__":
+    main()
